@@ -1,16 +1,23 @@
 import React, { useMemo, useState } from "react";
-import { CheckCircle2, XCircle, Download, ArrowRight, ArrowLeft, Radar, AlertTriangle } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  Download,
+  ArrowRight,
+  ArrowLeft,
+  Radar,
+  AlertTriangle,
+} from "lucide-react";
 
 /**
- * VÉRTICE 360 – BETA FUNCIONAL (FASE 1: DIAGNOSTICAR)
- * - Assessment adaptativo (con saltos)
- * - Scoring 1..5 por dimensión + global
- * - Diagnóstico 360: narrativa, radar (barras), dolores, FODA, brechas
- * - Decisión de avance a Fase 2 (bloqueo por dimensión crítica)
+ * VÉRTICE 360 – BETA FUNCIONAL (FASE 1: DIAGNOSTICAR) – v2
+ * - Bloques: Identidad, Historia, Contexto, FODA explícito, Futuro + Madurez (scoring)
+ * - Assessment adaptativo (algunos saltos)
+ * - Scoring 1..5 por dimensión + global (solo preguntas "scored")
+ * - Diagnóstico 360: narrativa, barras, dolores, FODA, brechas
  * - Export PDF: window.print()
  *
- * Nota: Esta beta no usa LLM real; usa plantillas dinámicas (determinísticas).
- * Esto ya sirve para demo y validación comercial.
+ * Nota: Sin LLM real; usa plantillas determinísticas + datos del usuario.
  */
 
 // ------------------------------
@@ -26,19 +33,390 @@ const DIMENSIONS = [
 ];
 
 // Reglas simples de bloqueo (puedes ajustar):
-// - Si alguna dimensión < 2, bloquea avance
 const ADVANCE_RULE = {
   minDimensionLevelToAdvance: 2,
 };
 
 // ------------------------------
-// 2) BANCO DE PREGUNTAS (adaptativo)
-// Cada respuesta tiene un score (1..5) y puede disparar condiciones.
+// 2) BANCO DE PREGUNTAS (mixto)
+// types: text | single | multi | scored
+// - scored: tiene opciones con score 1..5 y dimension
+// - single: selección única sin score
+// - multi: selección múltiple sin score
+// - text: campo abierto
 // ------------------------------
 const QUESTIONS = [
+  // ---------------------------------------------------
+  // SECCIÓN 0 – IDENTIDAD BÁSICA (doc)
+  // ---------------------------------------------------
+  {
+    id: "S0_1",
+    section: "Identidad",
+    type: "text",
+    title: "Identidad",
+    prompt: "Nombre de la empresa",
+    required: true,
+    placeholder: "Ej: Vértice SpA",
+  },
+  {
+    id: "S0_2",
+    section: "Identidad",
+    type: "text",
+    title: "Identidad",
+    prompt: "Nombre de quien responde",
+    required: true,
+    placeholder: "Ej: Rodrigo Muñoz",
+  },
+  {
+    id: "S0_3",
+    section: "Identidad",
+    type: "single",
+    title: "Identidad",
+    prompt: "Cargo o rol dentro de la empresa",
+    required: true,
+    options: [
+      { label: "Dueño / Socio fundador" },
+      { label: "Gerente general" },
+      { label: "Administrador" },
+      { label: "Jefe de área" },
+      { label: "Otro" },
+    ],
+  },
+  {
+    id: "S0_3C",
+    section: "Identidad",
+    type: "text",
+    title: "Identidad",
+    prompt: "Comentario / Observaciones (opcional)",
+    required: false,
+    placeholder: "Algo relevante sobre tu rol o contexto…",
+  },
+
+  // ---------------------------------------------------
+  // SECCIÓN 1 – HISTORIA DEL NEGOCIO (doc)
+  // ---------------------------------------------------
+  {
+    id: "S1_4",
+    section: "Historia",
+    type: "text",
+    title: "Historia",
+    prompt: "¿Cómo nació la idea de este negocio?",
+    required: true,
+    placeholder: "Cuéntanos con tus palabras cómo surgió la idea y qué te motivó…",
+  },
+  {
+    id: "S1_5",
+    section: "Historia",
+    type: "single",
+    title: "Historia",
+    prompt: "¿Hace cuántos años existe la empresa?",
+    required: true,
+    options: [
+      { label: "Menos de 1 año" },
+      { label: "1 a 3 años" },
+      { label: "3 a 5 años" },
+      { label: "5 a 10 años" },
+      { label: "Más de 10 años" },
+    ],
+  },
+  {
+    id: "S1_5C",
+    section: "Historia",
+    type: "text",
+    title: "Historia",
+    prompt: "Comentario (opcional)",
+    required: false,
+    placeholder: "Algún dato o hito importante…",
+  },
+  {
+    id: "S1_6",
+    section: "Historia",
+    type: "multi",
+    title: "Historia",
+    prompt: "En los primeros años, ¿cuál fue el principal desafío? (elige hasta 2)",
+    required: true,
+    maxSelect: 2,
+    options: [
+      { label: "Conseguir clientes" },
+      { label: "Financiamiento / flujo de caja" },
+      { label: "Falta de experiencia" },
+      { label: "Organización interna" },
+      { label: "Problemas operativos" },
+      { label: "Mercado / competencia" },
+      { label: "Otro" },
+    ],
+  },
+  {
+    id: "S1_6C",
+    section: "Historia",
+    type: "text",
+    title: "Historia",
+    prompt: "Anécdota / Aprendizaje (opcional)",
+    required: false,
+    placeholder: "¿Cómo enfrentaron ese desafío? ¿Qué aprendieron?",
+  },
+  {
+    id: "S1_7",
+    section: "Historia",
+    type: "text",
+    title: "Historia",
+    prompt: "Pensando en la historia de la empresa, ¿cuál ha sido su mayor logro hasta hoy?",
+    required: true,
+    placeholder: "Ej: llegar a X clientes, abrir una sucursal, mejorar márgenes, etc.",
+  },
+  {
+    id: "S1_8",
+    section: "Historia",
+    type: "text",
+    title: "Historia",
+    prompt: "Con honestidad, ¿cuál ha sido el momento más difícil del negocio?",
+    required: true,
+    placeholder: "Ej: crisis de caja, pérdida de cliente, tema operativo…",
+  },
+
+  // ---------------------------------------------------
+  // SECCIÓN 2 – A QUÉ SE DEDICA (doc)
+  // ---------------------------------------------------
+  {
+    id: "S2_9",
+    section: "Modelo de Negocio",
+    type: "single",
+    title: "Modelo de Negocio",
+    prompt: "¿A qué se dedica principalmente la empresa?",
+    required: true,
+    options: [
+      { label: "Servicios" },
+      { label: "Comercialización / ventas" },
+      { label: "Producción / manufactura" },
+      { label: "Construcción" },
+      { label: "Tecnología / digital" },
+      { label: "Otro" },
+    ],
+  },
+  {
+    id: "S2_9C",
+    section: "Modelo de Negocio",
+    type: "text",
+    title: "Modelo de Negocio",
+    prompt: "Describe con tus palabras qué hace la empresa y qué vende realmente",
+    required: true,
+    placeholder: "Ej: vendemos X, resolvemos Y, para Z tipo de cliente…",
+  },
+  {
+    id: "S2_10",
+    section: "Modelo de Negocio",
+    type: "multi",
+    title: "Modelo de Negocio",
+    prompt: "¿Qué tipo de clientes atiende principalmente?",
+    required: true,
+    options: [
+      { label: "Personas naturales" },
+      { label: "PYMES" },
+      { label: "Empresas medianas" },
+      { label: "Grandes empresas" },
+      { label: "Sector público" },
+    ],
+  },
+  {
+    id: "S2_11",
+    section: "Modelo de Negocio",
+    type: "single",
+    title: "Modelo de Negocio",
+    prompt: "¿Dónde opera principalmente la empresa?",
+    required: true,
+    options: [
+      { label: "Local / comuna" },
+      { label: "Región" },
+      { label: "Nacional" },
+      { label: "Internacional" },
+    ],
+  },
+
+  // ---------------------------------------------------
+  // SECCIÓN 3 – REALIDAD ACTUAL (doc)
+  // ---------------------------------------------------
+  {
+    id: "S3_12",
+    section: "Realidad Actual",
+    type: "single",
+    title: "Realidad Actual",
+    prompt: "Hoy, ¿cómo describirías la situación general de la empresa?",
+    required: true,
+    options: [
+      { label: "Muy compleja" },
+      { label: "Compleja" },
+      { label: "Estable" },
+      { label: "Buena" },
+      { label: "Muy buena" },
+    ],
+  },
+  {
+    id: "S3_13",
+    section: "Realidad Actual",
+    type: "single",
+    title: "Realidad Actual",
+    prompt: "¿La empresa ha crecido en los últimos 2 años?",
+    required: true,
+    options: [
+      { label: "Sí, mucho" },
+      { label: "Sí, pero de forma desordenada" },
+      { label: "Se ha mantenido" },
+      { label: "Ha disminuido" },
+      { label: "No lo tengo claro" },
+    ],
+  },
+  {
+    id: "S3_14",
+    section: "Realidad Actual",
+    type: "multi",
+    title: "Realidad Actual",
+    prompt: "¿Qué sientes que hoy te quita más tiempo como dueño / gerente?",
+    required: true,
+    options: [
+      { label: "Operación diaria" },
+      { label: "Problemas financieros" },
+      { label: "Personas / equipo" },
+      { label: "Ventas" },
+      { label: "Falta de orden / control" },
+      { label: "Todo un poco" },
+    ],
+  },
+
+  // ---------------------------------------------------
+  // SECCIÓN 4,5,6 – FODA EXPLÍCITO (doc)
+  // ---------------------------------------------------
+  {
+    id: "FODA_S",
+    section: "FODA",
+    type: "multi",
+    title: "FODA",
+    prompt: "¿Qué crees que hace bien tu empresa hoy? (Fortalezas)",
+    required: true,
+    options: [
+      { label: "Calidad del producto / servicio" },
+      { label: "Relación con clientes" },
+      { label: "Precio" },
+      { label: "Experiencia / know-how" },
+      { label: "Rapidez / flexibilidad" },
+      { label: "Equipo humano" },
+      { label: "Reputación" },
+    ],
+  },
+  {
+    id: "FODA_S_C",
+    section: "FODA",
+    type: "text",
+    title: "FODA",
+    prompt: "¿Por qué consideras eso una fortaleza? (opcional)",
+    required: false,
+    placeholder: "Ej: clientes recomiendan, entregas rápidas, excelencia técnica…",
+  },
+  {
+    id: "FODA_DIFF",
+    section: "FODA",
+    type: "text",
+    title: "FODA",
+    prompt: "¿Qué dirías que te diferencia de tus competidores?",
+    required: true,
+    placeholder: "Ej: atención, precio, especialización, rapidez, postventa…",
+  },
+  {
+    id: "FODA_W",
+    section: "FODA",
+    type: "multi",
+    title: "FODA",
+    prompt: "¿En qué áreas sientes que la empresa está más débil hoy? (Debilidades)",
+    required: true,
+    options: [
+      { label: "Finanzas / costos" },
+      { label: "Organización interna" },
+      { label: "Procesos" },
+      { label: "Ventas" },
+      { label: "Marketing" },
+      { label: "Dependencia del dueño" },
+      { label: "Tecnología / sistemas" },
+    ],
+  },
+  {
+    id: "FODA_W_C",
+    section: "FODA",
+    type: "text",
+    title: "FODA",
+    prompt: "¿Qué cosas sabes que deberías mejorar, pero no has podido abordar?",
+    required: true,
+    placeholder: "Ej: orden financiero, procesos, delegación, marketing, sistemas…",
+  },
+  {
+    id: "FODA_O",
+    section: "FODA",
+    type: "multi",
+    title: "FODA",
+    prompt: "Mirando hacia afuera, ¿qué oportunidades ves hoy para tu negocio?",
+    required: true,
+    options: [
+      { label: "Crecimiento del mercado" },
+      { label: "Nuevos clientes" },
+      { label: "Nuevos productos / servicios" },
+      { label: "Digitalización" },
+      { label: "Alianzas" },
+      { label: "Expansión geográfica" },
+    ],
+  },
+  {
+    id: "FODA_T",
+    section: "FODA",
+    type: "multi",
+    title: "FODA",
+    prompt: "¿Qué amenazas te preocupan hoy?",
+    required: true,
+    options: [
+      { label: "Competencia" },
+      { label: "Costos" },
+      { label: "Situación económica" },
+      { label: "Dependencia de pocos clientes" },
+      { label: "Falta de capital" },
+      { label: "Cambios regulatorios" },
+    ],
+  },
+
+  // ---------------------------------------------------
+  // SECCIÓN 7 – FUTURO (doc)
+  // ---------------------------------------------------
+  {
+    id: "S7_21",
+    section: "Futuro",
+    type: "text",
+    title: "Futuro",
+    prompt: "Si todo saliera bien, ¿cómo te gustaría ver tu empresa en 3 años?",
+    required: true,
+    placeholder: "Ej: crecer 2x, abrir sucursal, profesionalizar, nuevos servicios…",
+  },
+  {
+    id: "S7_22",
+    section: "Futuro",
+    type: "multi",
+    title: "Futuro",
+    prompt: "¿Qué crees que necesitas hoy para lograr ese crecimiento?",
+    required: true,
+    options: [
+      { label: "Orden y control" },
+      { label: "Estrategia clara" },
+      { label: "Más ventas" },
+      { label: "Mejor rentabilidad" },
+      { label: "Equipo" },
+      { label: "Tecnología" },
+      { label: "Acompañamiento" },
+    ],
+  },
+
+  // ---------------------------------------------------
+  // BLOQUE MADUREZ (tu banco scored original)
+  // ---------------------------------------------------
   // ESTRATEGIA
   {
     id: "E1",
+    section: "Madurez",
+    type: "scored",
     dimension: "strategy",
     title: "Estrategia",
     prompt: "Cuando tomas decisiones importantes en tu empresa, normalmente…",
@@ -52,10 +430,11 @@ const QUESTIONS = [
   },
   {
     id: "E2",
+    section: "Madurez",
+    type: "scored",
     dimension: "strategy",
     title: "Estrategia",
     prompt: "¿Qué tan claro tienes el rumbo de la empresa para los próximos 2–3 años?",
-    // Solo si E1 >= 3
     showIf: (a) => (a["E1"]?.score ?? 0) >= 3,
     options: [
       { label: "No lo hemos definido", score: 1 },
@@ -69,6 +448,8 @@ const QUESTIONS = [
   // PROCESOS
   {
     id: "P1",
+    section: "Madurez",
+    type: "scored",
     dimension: "process",
     title: "Procesos",
     prompt: "Si una persona clave falta una semana, ¿qué pasa con la operación?",
@@ -82,6 +463,8 @@ const QUESTIONS = [
   },
   {
     id: "P2",
+    section: "Madurez",
+    type: "scored",
     dimension: "process",
     title: "Procesos",
     prompt: "Las tareas importantes de la empresa…",
@@ -98,6 +481,8 @@ const QUESTIONS = [
   // FINANZAS
   {
     id: "F1",
+    section: "Madurez",
+    type: "scored",
     dimension: "finance",
     title: "Finanzas",
     prompt: "¿Cómo sabes si este mes fue bueno o malo para la empresa?",
@@ -111,6 +496,8 @@ const QUESTIONS = [
   },
   {
     id: "F2",
+    section: "Madurez",
+    type: "scored",
     dimension: "finance",
     title: "Finanzas",
     prompt: "¿Con qué frecuencia revisas información financiera para decidir?",
@@ -127,6 +514,8 @@ const QUESTIONS = [
   // PERSONAS
   {
     id: "R1",
+    section: "Madurez",
+    type: "scored",
     dimension: "people",
     title: "Personas y Roles",
     prompt: "En tu empresa, las responsabilidades…",
@@ -140,6 +529,8 @@ const QUESTIONS = [
   },
   {
     id: "R2",
+    section: "Madurez",
+    type: "scored",
     dimension: "people",
     title: "Personas y Roles",
     prompt: "Cuando surge un problema importante…",
@@ -156,6 +547,8 @@ const QUESTIONS = [
   // TECNOLOGÍA
   {
     id: "T1",
+    section: "Madurez",
+    type: "scored",
     dimension: "tech",
     title: "Tecnología y Datos",
     prompt: "¿Qué rol juega hoy la tecnología en tu empresa?",
@@ -169,6 +562,8 @@ const QUESTIONS = [
   },
   {
     id: "T2",
+    section: "Madurez",
+    type: "scored",
     dimension: "tech",
     title: "Tecnología y Datos",
     prompt: "La información que usas para decidir…",
@@ -185,9 +580,12 @@ const QUESTIONS = [
   // RIESGOS
   {
     id: "G1",
+    section: "Madurez",
+    type: "scored",
     dimension: "risk",
     title: "Gobierno y Riesgos",
-    prompt: "Si hoy ocurre un problema grave (persona clave, cliente grande, caja), la empresa…",
+    prompt:
+      "Si hoy ocurre un problema grave (persona clave, cliente grande, caja), la empresa…",
     options: [
       { label: "Queda muy expuesta", score: 1 },
       { label: "Tendría serios problemas", score: 2 },
@@ -198,6 +596,8 @@ const QUESTIONS = [
   },
   {
     id: "G2",
+    section: "Madurez",
+    type: "scored",
     dimension: "risk",
     title: "Gobierno y Riesgos",
     prompt: "¿Qué tan consciente eres de los principales riesgos del negocio?",
@@ -213,10 +613,19 @@ const QUESTIONS = [
 ];
 
 // ------------------------------
-// 3) UTILIDADES – niveles, textos, FODA, brechas
+// 3) UTILIDADES
 // ------------------------------
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
+}
+
+function toArray(v) {
+  return Array.isArray(v) ? v : v ? [v] : [];
+}
+
+function cleanText(s) {
+  if (!s) return "";
+  return String(s).trim();
 }
 
 function levelLabel(level) {
@@ -229,8 +638,10 @@ function levelLabel(level) {
 
 function coverHeadline(level) {
   const l = Math.round(level);
-  if (l <= 2) return "Tu empresa funciona gracias al esfuerzo constante, pero hoy está expuesta.";
-  if (l === 3) return "Tu empresa dejó atrás el caos; ahora el desafío es profesionalizar.";
+  if (l <= 2)
+    return "Tu empresa funciona gracias al esfuerzo constante, pero hoy está expuesta.";
+  if (l === 3)
+    return "Tu empresa dejó atrás el caos; ahora el desafío es profesionalizar.";
   return "Tu empresa tiene una base sólida para crecer con control.";
 }
 
@@ -307,16 +718,15 @@ function inferDependency(answers) {
 }
 
 function topPainPoints(levelsByDim) {
-  // Dolores: tomamos las 3 dimensiones más bajas
   const sorted = Object.entries(levelsByDim)
     .sort((a, b) => a[1] - b[1])
     .slice(0, 3);
 
   return sorted.map(([dimKey, lvl], i) => {
-    const dimName = DIMENSIONS.find((d) => d.key === dimKey)?.name ?? dimKey;
-    const risk = lvl < 2.5
-      ? "esto aumenta la fragilidad del negocio y puede generar quiebres al crecer."
-      : "esto puede limitar el crecimiento o reducir rentabilidad si no se refuerza.";
+    const risk =
+      lvl < 2.5
+        ? "esto aumenta la fragilidad del negocio y puede generar quiebres al crecer."
+        : "esto puede limitar el crecimiento o reducir rentabilidad si no se refuerza.";
 
     const titleMap = {
       strategy: "Falta de foco y prioridades claras",
@@ -328,10 +738,13 @@ function topPainPoints(levelsByDim) {
     };
 
     const causeMap = {
-      strategy: "las decisiones se toman más por urgencia que por un rumbo compartido",
-      process: "la operación depende de hábitos y personas más que de procesos estables",
+      strategy:
+        "las decisiones se toman más por urgencia que por un rumbo compartido",
+      process:
+        "la operación depende de hábitos y personas más que de procesos estables",
       finance: "los números no se usan todavía como sistema de control",
-      people: "no existe una definición clara y constante de responsables y límites",
+      people:
+        "no existe una definición clara y constante de responsables y límites",
       tech: "la información no está organizada para apoyar decisiones",
       risk: "no hay controles mínimos sistemáticos para prevenir impactos",
     };
@@ -339,49 +752,99 @@ function topPainPoints(levelsByDim) {
     return {
       rank: i + 1,
       dimension: dimKey,
-      name: titleMap[dimKey] ?? `Brecha en ${dimName}`,
+      name: titleMap[dimKey] ?? `Brecha en ${dimKey}`,
       why: `Esto ocurre porque ${causeMap[dimKey] ?? "hay brechas estructurales"}.`,
       risk,
     };
   });
 }
 
-function buildFODA(levelsByDim) {
-  // Fortalezas: dimensiones >= 3.5 (top 2)
-  // Debilidades: dimensiones <= 2.5 (top 2)
+function buildFODAFromExplicit(answers) {
+  const strengths = toArray(answers["FODA_S"]?.value).map((x) => `• ${x}`);
+  const strengthsWhy = cleanText(answers["FODA_S_C"]?.value);
+  const diff = cleanText(answers["FODA_DIFF"]?.value);
+
+  const weaknesses = toArray(answers["FODA_W"]?.value).map((x) => `• ${x}`);
+  const improve = cleanText(answers["FODA_W_C"]?.value);
+
+  const opportunities = toArray(answers["FODA_O"]?.value).map((x) => `• ${x}`);
+  const threats = toArray(answers["FODA_T"]?.value).map((x) => `• ${x}`);
+
+  const hasAny =
+    strengths.length ||
+    weaknesses.length ||
+    opportunities.length ||
+    threats.length ||
+    diff ||
+    improve;
+
+  if (!hasAny) return null;
+
+  const strengthsFinal = [...strengths];
+  if (diff) strengthsFinal.push(`• Diferenciación: ${diff}`);
+  if (strengthsWhy) strengthsFinal.push(`• Por qué es fortaleza: ${strengthsWhy}`);
+
+  const weaknessesFinal = [...weaknesses];
+  if (improve) weaknessesFinal.push(`• Pendiente crítico: ${improve}`);
+
+  return {
+    strengths: strengthsFinal.length
+      ? strengthsFinal
+      : ["• Fortalezas detectadas, pero falta detalle explícito."],
+    weaknesses: weaknessesFinal.length
+      ? weaknessesFinal
+      : ["• Debilidades detectadas, pero falta detalle explícito."],
+    opportunities: opportunities.length
+      ? opportunities
+      : ["• Oportunidades detectadas, pero falta detalle explícito."],
+    threats: threats.length
+      ? threats
+      : ["• Amenazas detectadas, pero falta detalle explícito."],
+  };
+}
+
+function buildFODAFromDimensions(levelsByDim) {
   const entries = Object.entries(levelsByDim);
+
   const strengths = entries
     .filter(([, v]) => v >= 3.5)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2)
-    .map(([k]) => `Base sólida en ${DIMENSIONS.find(d => d.key === k)?.name ?? k}.`);
+    .map(
+      ([k]) => `• Base sólida en ${DIMENSIONS.find((d) => d.key === k)?.name ?? k}.`
+    );
 
   const weaknesses = entries
     .filter(([, v]) => v <= 2.5)
     .sort((a, b) => a[1] - b[1])
     .slice(0, 2)
-    .map(([k]) => `Brecha relevante en ${DIMENSIONS.find(d => d.key === k)?.name ?? k}.`);
+    .map(
+      ([k]) => `• Brecha relevante en ${DIMENSIONS.find((d) => d.key === k)?.name ?? k}.`
+    );
 
   const opportunities = [
-    "Ordenar la base para crecer con menos desgaste y mayor rentabilidad.",
-    "Estandarizar decisiones y operación para reducir improvisación.",
+    "• Ordenar la base para crecer con menos desgaste y mayor rentabilidad.",
+    "• Estandarizar decisiones y operación para reducir improvisación.",
   ];
 
   const threats = [
-    "Crecer en ventas sin fortalecer control y procesos puede generar quiebres operacionales o de caja.",
-    "Alta dependencia de personas/cliente/caja puede aumentar la fragilidad del negocio.",
+    "• Crecer en ventas sin fortalecer control y procesos puede generar quiebres operacionales o de caja.",
+    "• Alta dependencia de personas/cliente/caja puede aumentar la fragilidad del negocio.",
   ];
 
   return {
-    strengths: strengths.length ? strengths : ["Fortalezas presentes, pero aún no consistentes en todas las áreas."],
-    weaknesses: weaknesses.length ? weaknesses : ["Las debilidades no son críticas, pero existen oportunidades de profesionalización."],
+    strengths: strengths.length
+      ? strengths
+      : ["• Fortalezas presentes, pero aún no consistentes en todas las áreas."],
+    weaknesses: weaknesses.length
+      ? weaknesses
+      : ["• Las debilidades no son críticas, pero existen oportunidades de profesionalización."],
     opportunities,
     threats,
   };
 }
 
 function buildBreaches(levelsByDim) {
-  // Priorización simple: 1) más baja, 2) segunda más baja, 3) tercera (postergable)
   const sorted = Object.entries(levelsByDim).sort((a, b) => a[1] - b[1]);
   const [b1, b2, b3] = sorted;
 
@@ -406,16 +869,44 @@ function buildBreaches(levelsByDim) {
   ];
 }
 
+function buildContextNarrative(answers) {
+  const empresa = cleanText(answers["S0_1"]?.value) || "La empresa";
+  const rol = cleanText(answers["S0_3"]?.value);
+  const giro = cleanText(answers["S2_9"]?.value);
+  const queVende = cleanText(answers["S2_9C"]?.value);
+  const clientes = toArray(answers["S2_10"]?.value).join(", ");
+  const donde = cleanText(answers["S2_11"]?.value);
+  const situacion = cleanText(answers["S3_12"]?.value);
+  const crecimiento = cleanText(answers["S3_13"]?.value);
+  const quitaTiempo = toArray(answers["S3_14"]?.value).join(", ");
+  const futuro = cleanText(answers["S7_21"]?.value);
+  const necesita = toArray(answers["S7_22"]?.value).join(", ");
+
+  const bullets = [
+    `• Giro principal: ${giro || "—"}`,
+    `• Qué vende / hace realmente: ${queVende || "—"}`,
+    `• Clientes: ${clientes || "—"}`,
+    `• Operación: ${donde || "—"}`,
+    `• Situación actual: ${situacion || "—"}`,
+    `• Crecimiento últimos 2 años: ${crecimiento || "—"}`,
+    `• Lo que más consume tiempo: ${quitaTiempo || "—"}`,
+    `• Visión a 3 años: ${futuro || "—"}`,
+    `• Lo que necesita para lograrlo: ${necesita || "—"}`,
+  ];
+
+  const headline = `${empresa}${rol ? ` (${rol})` : ""}: contexto y foco`;
+  return { headline, bullets };
+}
+
 // ------------------------------
-// 4) SCORING
-// - Por dimensión: promedio de preguntas respondidas de esa dimensión
-// - Global: promedio ponderado por DIMENSIONS.weight
+// 4) SCORING (solo preguntas "scored")
 // ------------------------------
 function computeScores(answers) {
   const byDim = {};
   const counts = {};
 
   for (const q of QUESTIONS) {
+    if (q.type !== "scored") continue;
     const a = answers[q.id];
     if (!a) continue;
     byDim[q.dimension] = (byDim[q.dimension] ?? 0) + a.score;
@@ -427,7 +918,7 @@ function computeScores(answers) {
     const sum = byDim[d.key] ?? 0;
     const n = counts[d.key] ?? 0;
     const avg = n ? sum / n : 0;
-    levelsByDim[d.key] = avg || 1; // fallback a 1
+    levelsByDim[d.key] = avg || 1; // fallback
   }
 
   let global = 0;
@@ -438,7 +929,9 @@ function computeScores(answers) {
   }
   global = wsum ? global / wsum : 1;
 
-  const canAdvance = Object.values(levelsByDim).every((v) => v >= ADVANCE_RULE.minDimensionLevelToAdvance);
+  const canAdvance = Object.values(levelsByDim).every(
+    (v) => v >= ADVANCE_RULE.minDimensionLevelToAdvance
+  );
 
   return { levelsByDim, global, canAdvance };
 }
@@ -488,12 +981,15 @@ function Bars({ levelsByDim }) {
   );
 }
 
+function Pill({ children }) {
+  return <span className="pill">{children}</span>;
+}
+
 // ------------------------------
 // 6) APP
 // ------------------------------
 export default function App() {
   const [step, setStep] = useState(0);
-  const [company, setCompany] = useState("Mi Empresa");
   const [answers, setAnswers] = useState({});
   const [mode, setMode] = useState("assessment"); // assessment | report
 
@@ -509,13 +1005,37 @@ export default function App() {
   }, [step, visibleQuestions.length]);
 
   const allAnswered = useMemo(() => {
-    return visibleQuestions.every((q) => Boolean(answers[q.id]));
+    return visibleQuestions.every((q) => {
+      if (!q.required) return true;
+      const a = answers[q.id];
+      if (!a) return false;
+      if (q.type === "text") return cleanText(a.value).length > 0;
+      if (q.type === "single") return Boolean(a.value);
+      if (q.type === "multi") return toArray(a.value).length > 0;
+      if (q.type === "scored") return Boolean(a.score);
+      return true;
+    });
   }, [visibleQuestions, answers]);
 
+  const currentAnswered = useMemo(() => {
+    if (!current) return false;
+    if (!current.required) return true;
+    const a = answers[current.id];
+    if (!a) return false;
+    if (current.type === "text") return cleanText(a.value).length > 0;
+    if (current.type === "single") return Boolean(a.value);
+    if (current.type === "multi") return toArray(a.value).length > 0;
+    if (current.type === "scored") return Boolean(a.score);
+    return false;
+  }, [current, answers]);
+
   const scoring = useMemo(() => {
-    if (!allAnswered) return null;
+    // scoring solo requiere que estén respondidas las preguntas "scored" visibles
+    const scoredQs = visibleQuestions.filter((q) => q.type === "scored");
+    const scoredOk = scoredQs.every((q) => Boolean(answers[q.id]?.score));
+    if (!scoredOk) return null;
     return computeScores(answers);
-  }, [allAnswered, answers]);
+  }, [visibleQuestions, answers]);
 
   const report = useMemo(() => {
     if (!scoring) return null;
@@ -523,33 +1043,91 @@ export default function App() {
     const { levelsByDim, global, canAdvance } = scoring;
     const lvl = levelLabel(global);
 
+    const bestDim =
+      DIMENSIONS.slice().sort((a, b) => levelsByDim[b.key] - levelsByDim[a.key])[0];
+    const worstDim =
+      DIMENSIONS.slice().sort((a, b) => levelsByDim[a.key] - levelsByDim[b.key])[0];
+
     const narrative = `Hoy tu empresa se encuentra en un nivel de madurez ${lvl.name}. Las principales decisiones se toman ${inferDecisionStyle(
       answers
     )}, y la operación depende ${inferDependency(answers)}. Existen avances en ${
-      DIMENSIONS.slice()
-        .sort((a, b) => levelsByDim[b.key] - levelsByDim[a.key])
-        .slice(0, 1)[0].name
-    }, mientras que ${
-      DIMENSIONS.slice().sort((a, b) => levelsByDim[a.key] - levelsByDim[b.key]).slice(0, 1)[0].name
-    } limita la capacidad de crecer de forma sostenible.`;
+      bestDim?.name
+    }, mientras que ${worstDim?.name} limita la capacidad de crecer de forma sostenible.`;
 
     const pains = topPainPoints(levelsByDim);
-    const foda = buildFODA(levelsByDim);
+
+    // FODA: primero explícito; si falta, fallback dimensiones
+    const fodaExplicit = buildFODAFromExplicit(answers);
+    const foda = fodaExplicit ?? buildFODAFromDimensions(levelsByDim);
+
     const breaches = buildBreaches(levelsByDim);
 
-    return { levelsByDim, global, lvl, canAdvance, narrative, pains, foda, breaches };
+    const ctx = buildContextNarrative(answers);
+
+    // historia
+    const historia = {
+      idea: cleanText(answers["S1_4"]?.value),
+      antiguedad: cleanText(answers["S1_5"]?.value),
+      desafios: toArray(answers["S1_6"]?.value),
+      logro: cleanText(answers["S1_7"]?.value),
+      dificil: cleanText(answers["S1_8"]?.value),
+    };
+
+    return {
+      levelsByDim,
+      global,
+      lvl,
+      canAdvance,
+      narrative,
+      pains,
+      foda,
+      breaches,
+      ctx,
+      historia,
+    };
   }, [scoring, answers]);
 
-  function selectOption(q, opt) {
+  function setText(q, value) {
     setAnswers((prev) => ({
       ...prev,
-      [q.id]: { score: opt.score, label: opt.label, dimension: q.dimension },
+      [q.id]: { type: q.type, value },
+    }));
+  }
+
+  function setSingle(q, label) {
+    setAnswers((prev) => ({
+      ...prev,
+      [q.id]: { type: q.type, value: label },
+    }));
+  }
+
+  function toggleMulti(q, label) {
+    setAnswers((prev) => {
+      const current = toArray(prev[q.id]?.value);
+      const exists = current.includes(label);
+      let next = exists ? current.filter((x) => x !== label) : [...current, label];
+
+      const max = q.maxSelect ? Number(q.maxSelect) : null;
+      if (max && next.length > max) {
+        // si supera, no deja agregar más
+        next = current;
+      }
+
+      return {
+        ...prev,
+        [q.id]: { type: q.type, value: next },
+      };
+    });
+  }
+
+  function selectScored(q, opt) {
+    setAnswers((prev) => ({
+      ...prev,
+      [q.id]: { type: q.type, score: opt.score, label: opt.label, dimension: q.dimension },
     }));
   }
 
   function goNext() {
-    if (!current) return;
-    if (!answers[current.id]) return;
     const max = visibleQuestions.length - 1;
     setStep((s) => clamp(s + 1, 0, max));
   }
@@ -569,6 +1147,20 @@ export default function App() {
     setAnswers({});
   }
 
+  // helper UI
+  const currentSection = current?.section ?? "";
+  const answeredCount = useMemo(() => {
+    return visibleQuestions.reduce((acc, q) => {
+      const a = answers[q.id];
+      if (!a) return acc;
+      if (q.type === "text") return cleanText(a.value).length ? acc + 1 : acc;
+      if (q.type === "single") return a.value ? acc + 1 : acc;
+      if (q.type === "multi") return toArray(a.value).length ? acc + 1 : acc;
+      if (q.type === "scored") return a.score ? acc + 1 : acc;
+      return acc;
+    }, 0);
+  }, [visibleQuestions, answers]);
+
   return (
     <div className="app">
       <header className="topbar no-print">
@@ -576,7 +1168,7 @@ export default function App() {
           <div className="logo">V</div>
           <div className="brandText">
             <div className="brandName">VÉRTICE 360</div>
-            <div className="brandTag">Fase 1 · Diagnosticar</div>
+            <div className="brandTag">Fase 1 · Diagnosticar (Beta v2)</div>
           </div>
         </div>
         <div className="topActions">
@@ -599,11 +1191,22 @@ export default function App() {
             <div className="cardHead">
               <div>
                 <h1>Assessment Inteligente</h1>
-                <p className="muted">Responde en lenguaje simple. El sistema adapta las preguntas.</p>
+                <p className="muted">
+                  No mostramos todo de una: vamos por bloques (historia → realidad → FODA → futuro → madurez).
+                </p>
               </div>
-              <div className="company">
-                <label className="muted">Empresa</label>
-                <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Nombre de la empresa" />
+
+              <div className="miniKpis">
+                <div className="miniKpi">
+                  <div className="miniKpiLabel muted">Bloque</div>
+                  <div className="miniKpiValue">{currentSection || "—"}</div>
+                </div>
+                <div className="miniKpi">
+                  <div className="miniKpiLabel muted">Avance</div>
+                  <div className="miniKpiValue">
+                    {answeredCount}/{visibleQuestions.length}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -620,21 +1223,92 @@ export default function App() {
 
                 <h2 className="qPrompt">{current.prompt}</h2>
 
-                <div className="options">
-                  {current.options.map((opt) => {
-                    const selected = answers[current.id]?.label === opt.label;
-                    return (
-                      <button
-                        key={opt.label}
-                        className={`opt ${selected ? "selected" : ""}`}
-                        onClick={() => selectOption(current, opt)}
-                      >
-                        <span>{opt.label}</span>
-                        <span className="optScore">{opt.score}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Render por tipo */}
+                {current.type === "text" && (
+                  <div className="textAreaWrap">
+                    <textarea
+                      className="textArea"
+                      rows={6}
+                      value={answers[current.id]?.value ?? ""}
+                      placeholder={current.placeholder ?? "Escribe aquí…"}
+                      onChange={(e) => setText(current, e.target.value)}
+                    />
+                    {!currentAnswered && current.required ? (
+                      <div className="hint warn">Esta respuesta es obligatoria.</div>
+                    ) : (
+                      <div className="hint muted">Tip: mientras más concreto, mejor el diagnóstico.</div>
+                    )}
+                  </div>
+                )}
+
+                {current.type === "single" && (
+                  <div className="options">
+                    {current.options.map((opt) => {
+                      const selected = answers[current.id]?.value === opt.label;
+                      return (
+                        <button
+                          key={opt.label}
+                          className={`opt ${selected ? "selected" : ""}`}
+                          onClick={() => setSingle(current, opt.label)}
+                        >
+                          <span>{opt.label}</span>
+                          <span className="optScore">1</span>
+                        </button>
+                      );
+                    })}
+                    {!currentAnswered && current.required ? (
+                      <div className="hint warn">Selecciona una opción para continuar.</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {current.type === "multi" && (
+                  <div className="options">
+                    {current.maxSelect ? (
+                      <div className="multiHint">
+                        <Pill>Máx. {current.maxSelect} selecciones</Pill>
+                      </div>
+                    ) : null}
+
+                    {current.options.map((opt) => {
+                      const selected = toArray(answers[current.id]?.value).includes(opt.label);
+                      return (
+                        <button
+                          key={opt.label}
+                          className={`opt ${selected ? "selected" : ""}`}
+                          onClick={() => toggleMulti(current, opt.label)}
+                        >
+                          <span>{opt.label}</span>
+                          <span className="optScore">{selected ? "✓" : "+"}</span>
+                        </button>
+                      );
+                    })}
+                    {!currentAnswered && current.required ? (
+                      <div className="hint warn">Selecciona al menos una opción.</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {current.type === "scored" && (
+                  <div className="options">
+                    {current.options.map((opt) => {
+                      const selected = answers[current.id]?.label === opt.label;
+                      return (
+                        <button
+                          key={opt.label}
+                          className={`opt ${selected ? "selected" : ""}`}
+                          onClick={() => selectScored(current, opt)}
+                        >
+                          <span>{opt.label}</span>
+                          <span className="optScore">{opt.score}</span>
+                        </button>
+                      );
+                    })}
+                    {!currentAnswered && current.required ? (
+                      <div className="hint warn">Elige una opción para continuar.</div>
+                    ) : null}
+                  </div>
+                )}
 
                 <div className="nav">
                   <button className="btn ghost" onClick={goBack} disabled={step === 0}>
@@ -642,7 +1316,7 @@ export default function App() {
                   </button>
 
                   {step < visibleQuestions.length - 1 ? (
-                    <button className="btn" onClick={goNext} disabled={!answers[current.id]}>
+                    <button className="btn" onClick={goNext} disabled={!currentAnswered}>
                       Siguiente <ArrowRight size={16} />
                     </button>
                   ) : (
@@ -667,7 +1341,7 @@ export default function App() {
                   <Badge color={report.lvl.color}>{report.lvl.name}</Badge>
                   <span className="muted">· {new Date().toLocaleDateString()}</span>
                 </div>
-                <h1 className="heroTitle">{company}</h1>
+                <h1 className="heroTitle">{cleanText(answers["S0_1"]?.value) || "Mi Empresa"}</h1>
                 <p className="heroHeadline">{coverHeadline(report.global)}</p>
                 <p className="heroIntro">{coverIntro(report.global)}</p>
               </div>
@@ -678,6 +1352,47 @@ export default function App() {
                 <div className="heroBoxHint muted">Promedio ponderado por dimensiones</div>
               </div>
             </div>
+
+            {/* CONTEXTO */}
+            <section className="section">
+              <div className="sectionHead">
+                <h2>{report.ctx.headline}</h2>
+                <span className="muted">
+                  <Radar size={16} style={{ verticalAlign: "-3px" }} /> Foto ejecutiva
+                </span>
+              </div>
+              <div className="ctxGrid">
+                <div className="panel">
+                  <h3>Resumen</h3>
+                  <ul className="ulTight">
+                    {report.ctx.bullets.map((b, i) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="panel">
+                  <h3>Historia (lo que define el ADN)</h3>
+                  <div className="hist">
+                    <div className="histRow">
+                      <div className="histLabel">Origen</div>
+                      <div className="muted">{report.historia.idea || "—"}</div>
+                    </div>
+                    <div className="histRow">
+                      <div className="histLabel">Antigüedad</div>
+                      <div className="muted">{report.historia.antiguedad || "—"}</div>
+                    </div>
+                    <div className="histRow">
+                      <div className="histLabel">Mayor logro</div>
+                      <div className="muted">{report.historia.logro || "—"}</div>
+                    </div>
+                    <div className="histRow">
+                      <div className="histLabel">Momento más difícil</div>
+                      <div className="muted">{report.historia.dificil || "—"}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
 
             {/* FOTO GENERAL */}
             <section className="section">
@@ -704,7 +1419,9 @@ export default function App() {
                       const v = report.levelsByDim[d.key];
                       return (
                         <div key={d.key} className="dimNote">
-                          <div className="dimName">{d.name} · {v.toFixed(1)}</div>
+                          <div className="dimName">
+                            {d.name} · {v.toFixed(1)}
+                          </div>
                           <div className="muted">{dimensionText(d.key, v)}</div>
                         </div>
                       );
@@ -735,23 +1452,39 @@ export default function App() {
 
             {/* FODA */}
             <section className="section">
-              <h2>Análisis FODA</h2>
+              <h2>Análisis FODA (con tus respuestas)</h2>
               <div className="foda">
                 <div className="fodaBox">
                   <h3>Fortalezas</h3>
-                  <ul>{report.foda.strengths.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <ul className="ulTight">
+                    {report.foda.strengths.map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
                 </div>
                 <div className="fodaBox">
                   <h3>Oportunidades</h3>
-                  <ul>{report.foda.opportunities.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <ul className="ulTight">
+                    {report.foda.opportunities.map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
                 </div>
                 <div className="fodaBox">
                   <h3>Debilidades</h3>
-                  <ul>{report.foda.weaknesses.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <ul className="ulTight">
+                    {report.foda.weaknesses.map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
                 </div>
                 <div className="fodaBox">
                   <h3>Amenazas</h3>
-                  <ul>{report.foda.threats.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <ul className="ulTight">
+                    {report.foda.threats.map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </section>
@@ -790,7 +1523,7 @@ export default function App() {
                   {report.canAdvance ? (
                     <button
                       className="btn"
-                      onClick={() => alert("Beta: aquí conectas con la Fase 2 cuando la construyamos.")}
+                      onClick={() => alert("Beta: aquí conectas con la Fase 2 (Canvas) cuando la construyamos.")}
                     >
                       Continuar a Fase 2 <ArrowRight size={16} />
                     </button>
@@ -804,9 +1537,7 @@ export default function App() {
             </section>
 
             <footer className="footer">
-              <div className="muted">
-                Diagnóstico generado por el Método Vértice 360 · Fase 1 (Beta)
-              </div>
+              <div className="muted">Diagnóstico generado por el Método Vértice 360 · Fase 1 (Beta v2)</div>
             </footer>
           </div>
         )}
@@ -886,19 +1617,20 @@ body{
   display:flex; gap:16px; align-items:flex-start; justify-content:space-between;
   margin-bottom:12px;
 }
-.company{display:flex; flex-direction:column; gap:6px; min-width:280px}
-.company input{
-  background: rgba(255,255,255,.04);
+.miniKpis{display:flex; gap:10px; flex-wrap:wrap}
+.miniKpi{
   border:1px solid var(--line);
-  border-radius:12px;
+  background: rgba(255,255,255,.03);
+  border-radius:14px;
   padding:10px 12px;
-  color:var(--text);
-  outline:none;
+  min-width: 160px;
 }
-.company input:focus{border-color: rgba(110,168,255,.55)}
+.miniKpiLabel{font-size:12px}
+.miniKpiValue{font-weight:900; margin-top:4px}
 
 h1{margin:0 0 4px 0; font-size:22px}
 h2{margin:0}
+h3{margin:0}
 p{margin:0}
 
 .muted{color:var(--muted)}
@@ -919,6 +1651,22 @@ p{margin:0}
 .qMeta{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:12px}
 .qPrompt{margin:10px 0 14px; font-size:20px; line-height:1.25}
 
+.textAreaWrap{display:flex; flex-direction:column; gap:10px}
+.textArea{
+  width:100%;
+  background: rgba(255,255,255,.03);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px 12px;
+  color: var(--text);
+  outline:none;
+  resize: vertical;
+  line-height:1.45;
+}
+.textArea:focus{border-color: rgba(110,168,255,.55)}
+.hint{font-size:12px}
+.hint.warn{color: rgba(255,214,90,.95); font-weight:700}
+
 .options{display:flex; flex-direction:column; gap:10px}
 .opt{
   text-align:left;
@@ -935,13 +1683,25 @@ p{margin:0}
 .opt:active{transform: scale(.99)}
 .opt.selected{border-color: rgba(66,211,146,.55); background: rgba(66,211,146,.08)}
 .optScore{
-  width:34px; height:28px;
+  min-width:34px; height:28px;
   border-radius:10px;
   display:flex; align-items:center; justify-content:center;
   border:1px solid var(--line);
   background: rgba(255,255,255,.04);
   color: var(--muted);
-  font-weight:700;
+  font-weight:900;
+  padding:0 10px;
+}
+.multiHint{display:flex; justify-content:flex-start; margin-bottom:4px}
+.pill{
+  display:inline-flex; align-items:center;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  font-size:12px;
+  color: var(--muted);
+  font-weight:800;
 }
 
 .nav{display:flex; justify-content:space-between; align-items:center; margin-top:14px}
@@ -954,7 +1714,7 @@ p{margin:0}
   background: rgba(110,168,255,.18);
   color: var(--text);
   cursor:pointer;
-  font-weight:700;
+  font-weight:800;
 }
 .btn:hover{background: rgba(110,168,255,.24)}
 .btn:disabled{opacity:.45; cursor:not-allowed}
@@ -969,7 +1729,7 @@ p{margin:0}
   border-radius:999px;
   border:1px solid var(--line);
   font-size:12px;
-  font-weight:800;
+  font-weight:900;
 }
 .badge.red{background: rgba(255,90,106,.14); border-color: rgba(255,90,106,.35)}
 .badge.orange{background: rgba(255,176,32,.14); border-color: rgba(255,176,32,.35)}
@@ -990,7 +1750,7 @@ p{margin:0}
 }
 .heroTop{display:flex; gap:10px; align-items:center; margin-bottom:10px}
 .heroTitle{font-size:28px; margin:0 0 6px}
-.heroHeadline{font-size:18px; font-weight:800; margin:0 0 8px}
+.heroHeadline{font-size:18px; font-weight:900; margin:0 0 8px}
 .heroIntro{color:var(--muted); line-height:1.5}
 
 .heroBox{
@@ -1002,7 +1762,7 @@ p{margin:0}
   flex-direction:column;
   justify-content:center;
 }
-.heroBoxTitle{color:var(--muted); font-weight:700}
+.heroBoxTitle{color:var(--muted); font-weight:800}
 .heroBoxValue{font-size:28px; font-weight:900; margin:6px 0}
 .heroBoxHint{font-size:12px}
 
@@ -1016,6 +1776,19 @@ p{margin:0}
 .sectionHead{display:flex; justify-content:space-between; align-items:center; gap:12px}
 .section h2{margin:0 0 10px 0}
 
+.ctxGrid{display:grid; grid-template-columns: 1fr 1fr; gap:14px}
+.ulTight{margin:0; padding-left:18px}
+.ulTight li{margin:6px 0; color: var(--text); opacity:.95}
+
+.hist{display:flex; flex-direction:column; gap:10px}
+.histRow{
+  padding:10px 10px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background: rgba(0,0,0,.08);
+}
+.histLabel{font-weight:900; margin-bottom:6px}
+
 .grid2{
   display:grid; grid-template-columns: 1fr 1fr; gap:14px;
 }
@@ -1028,7 +1801,7 @@ p{margin:0}
 
 .bars{display:flex; flex-direction:column; gap:12px}
 .barRow{display:grid; grid-template-columns: 140px 1fr 50px; gap:10px; align-items:center}
-.barLabel{color:var(--muted); font-weight:700; font-size:13px}
+.barLabel{color:var(--muted); font-weight:800; font-size:13px}
 .barTrack{height:10px; border-radius:999px; background: rgba(255,255,255,.06); border:1px solid var(--line); overflow:hidden}
 .barFill{height:100%; background: linear-gradient(90deg, rgba(110,168,255,.95), rgba(66,211,146,.85))}
 .barValue{font-weight:900; text-align:right}
@@ -1051,12 +1824,11 @@ p{margin:0}
   flex-direction:column;
   gap:10px;
 }
-.painCard.big{grid-column: span 1}
 .painTop{display:flex; justify-content:space-between; align-items:center}
 .painRisk{
   display:flex; gap:8px; align-items:flex-start;
   color: rgba(255,214,90,.95);
-  font-weight:700;
+  font-weight:800;
 }
 
 .foda{
@@ -1071,8 +1843,6 @@ p{margin:0}
   padding:14px;
 }
 .fodaBox h3{margin:0 0 10px}
-.fodaBox ul{margin:0; padding-left:18px; color: var(--text); opacity:.95}
-.fodaBox li{margin:6px 0}
 
 .breaches{
   display:flex; flex-direction:column; gap:10px;
@@ -1121,7 +1891,7 @@ p{margin:0}
   .cards3{grid-template-columns: 1fr}
   .foda{grid-template-columns: 1fr}
   .breachRow{grid-template-columns: 1fr; gap:6px}
-  .company{min-width: 200px}
+  .ctxGrid{grid-template-columns: 1fr}
 }
 
 /* PRINT */
