@@ -1221,7 +1221,9 @@ export default function App() {
                   </span>
                 </div>
 
-                <h2 className="qPrompt">{current.prompt}</h2>
+                <h2 className="qPrompt">
+  {typeof current.prompt === "function" ? current.prompt(answers) : current.prompt}
+</h2>
 
                 {/* Render por tipo */}
                 {current.type === "text" && (
